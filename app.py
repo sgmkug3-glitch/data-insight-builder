@@ -74,10 +74,19 @@ def check_authentication():
     """요청 로깅 및 세션 기반 비밀번호 보안 인증 검사"""
     logger.info(f"[REQUEST] {request.method} {request.path}")
 
+    # Vercel 서버리스 환경에서 /api/index가 붙는 경우 경로 정규화
+    norm_path = request.path
+    if norm_path.startswith("/api/index.py"):
+        norm_path = norm_path[len("/api/index.py"):] or "/"
+    elif norm_path.startswith("/api/index"):
+        norm_path = norm_path[len("/api/index"):] or "/"
+
     # 1. 인증 제외 대상: 정적 파일, 헬스체크, 로그인/로그아웃 페이지, PWA 매니페스트 및 서비스워커
+    exempt_paths = ["/login", "/logout", "/health", "/sw.js", "/manifest.json", "/favicon.ico"]
     if (
         request.path.startswith("/static/")
-        or request.path in ["/login", "/logout", "/health", "/sw.js", "/manifest.json", "/favicon.ico"]
+        or request.path.startswith("/public/")
+        or norm_path in exempt_paths
     ):
         return None
 
@@ -93,13 +102,13 @@ def check_authentication():
     # 4. 미인증 요청 처리
     # API 요청(JSON 또는 주요 API 경로)인 경우 401 JSON 응답
     api_paths = ["/inspect", "/suggest", "/run", "/explain", "/ask", "/chat"]
-    if request.path in api_paths or request.is_json:
-        logger.warning(f"[AUTH] 미인증 API 요청 차단: {request.path}")
+    if norm_path in api_paths or request.is_json:
+        logger.warning(f"[AUTH] 미인증 API 요청 차단: {request.path} (norm: {norm_path})")
         return jsonify({"error": "보안 인증이 필요합니다. 먼저 비밀번호를 입력해 로그인해주세요."}), 401
 
     # 일반 웹페이지 접속 요청인 경우 로그인 화면으로 리다이렉트
     logger.info(f"[AUTH] 미인증 브라우저 접근 -> /login 리다이렉트 (path: {request.path})")
-    return redirect(url_for("login"))
+    return redirect("/login")
 
 
 @app.errorhandler(413)
@@ -111,11 +120,12 @@ def request_entity_too_large(error):
 
 
 @app.route("/login", methods=["GET", "POST"])
+@app.route("/api/index/login", methods=["GET", "POST"])
 def login():
     """보안 로그인(비밀번호 0412) 처리 및 화면 제공"""
     if request.method == "GET":
         if session.get("authenticated"):
-            return redirect(url_for("index"))
+            return redirect("/")
         return render_template("login.html")
 
     # POST 처리
@@ -131,7 +141,7 @@ def login():
         logger.info("[AUTH] 로그인 성공 (비밀번호 일치)")
         if request.is_json:
             return jsonify({"status": "success", "redirect": "/"}), 200
-        return redirect(url_for("index"))
+        return redirect("/")
     else:
         logger.warning("[AUTH] 로그인 실패 (비밀번호 불일치)")
         error_msg = "비밀번호가 올바르지 않습니다. 다시 입력해주세요."
@@ -141,14 +151,16 @@ def login():
 
 
 @app.route("/logout")
+@app.route("/api/index/logout")
 def logout():
     """로그아웃 및 세션 해제"""
     session.pop("authenticated", None)
     logger.info("[AUTH] 로그아웃 완료")
-    return redirect(url_for("login"))
+    return redirect("/login")
 
 
 @app.route("/sw.js")
+@app.route("/api/index/sw.js")
 def service_worker():
     """PWA 서비스 워커 제공 (루트 스코프 적용)"""
     response = app.send_static_file("sw.js")
@@ -159,6 +171,7 @@ def service_worker():
 
 
 @app.route("/manifest.json")
+@app.route("/api/index/manifest.json")
 def pwa_manifest():
     """PWA 웹앱 매니페스트 제공"""
     response = app.send_static_file("manifest.json")
@@ -168,12 +181,15 @@ def pwa_manifest():
 
 
 @app.route("/favicon.ico")
+@app.route("/api/index/favicon.ico")
 def favicon():
     """파비콘 제공"""
     return app.send_static_file("icons/favicon.ico")
 
 
 @app.route("/")
+@app.route("/api/index")
+@app.route("/api/index/")
 def index():
     """메인 페이지를 반환합니다. (템플릿 준비 전에는 기본 안내 메시지 표시)"""
     logger.info("[RESPONSE] status=200 path=/")
