@@ -1276,4 +1276,72 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
     }
+
+    // =========================================================================
+    // 6. PWA (Progressive Web App) 모바일 크롬 앱 설치 지원
+    // =========================================================================
+    let deferredInstallPrompt = null;
+    const btnHeaderInstall = document.getElementById("btn-header-install");
+    const pwaInstallBanner = document.getElementById("pwa-install-banner");
+    const btnPwaInstall = document.getElementById("btn-pwa-install");
+    const btnPwaDismiss = document.getElementById("btn-pwa-dismiss");
+
+    // 서비스 워커 등록
+    if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+            navigator.serviceWorker.register("/sw.js")
+                .then(reg => console.log("[PWA] 서비스 워커 등록 완료 (Scope: " + reg.scope + ")"))
+                .catch(err => console.warn("[PWA] 서비스 워커 등록 실패:", err));
+        });
+    }
+
+    // 모바일 크롬 앱 설치 이벤트 수신
+    window.addEventListener("beforeinstallprompt", (e) => {
+        // 기본 브라우저 배너 방지
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        console.log("[PWA] 모바일 설치 가능 상태 확인됨");
+
+        // 상단 헤더 및 배너 노출
+        if (btnHeaderInstall) btnHeaderInstall.classList.remove("hidden");
+        if (pwaInstallBanner && !sessionStorage.getItem("pwa_dismissed")) {
+            pwaInstallBanner.classList.remove("hidden");
+        }
+    });
+
+    async function triggerPwaInstall() {
+        if (!deferredInstallPrompt) {
+            // 이미 설치되어 있거나 브라우저가 프롬프트를 지원하지 않는 경우 가이드
+            alert("스마트폰 크롬의 우측 상단 메뉴(⋮)에서 '홈 화면에 추가' 또는 '앱 설치'를 눌러 설치할 수도 있습니다!");
+            return;
+        }
+        deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        console.log("[PWA] 사용자 설치 선택:", choice.outcome);
+        if (choice.outcome === "accepted") {
+            if (pwaInstallBanner) pwaInstallBanner.classList.add("hidden");
+            if (btnHeaderInstall) btnHeaderInstall.classList.add("hidden");
+        }
+        deferredInstallPrompt = null;
+    }
+
+    if (btnHeaderInstall) {
+        btnHeaderInstall.addEventListener("click", triggerPwaInstall);
+    }
+    if (btnPwaInstall) {
+        btnPwaInstall.addEventListener("click", triggerPwaInstall);
+    }
+    if (btnPwaDismiss) {
+        btnPwaDismiss.addEventListener("click", () => {
+            if (pwaInstallBanner) pwaInstallBanner.classList.add("hidden");
+            sessionStorage.setItem("pwa_dismissed", "true");
+        });
+    }
+
+    window.addEventListener("appinstalled", () => {
+        console.log("[PWA] 앱 설치가 완료되었습니다.");
+        if (pwaInstallBanner) pwaInstallBanner.classList.add("hidden");
+        if (btnHeaderInstall) btnHeaderInstall.classList.add("hidden");
+        deferredInstallPrompt = null;
+    });
 });

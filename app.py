@@ -73,10 +73,10 @@ def check_authentication():
     """요청 로깅 및 세션 기반 비밀번호 보안 인증 검사"""
     logger.info(f"[REQUEST] {request.method} {request.path}")
 
-    # 1. 인증 제외 대상: 정적 파일, 헬스체크, 로그인/로그아웃 페이지
+    # 1. 인증 제외 대상: 정적 파일, 헬스체크, 로그인/로그아웃 페이지, PWA 매니페스트 및 서비스워커
     if (
         request.path.startswith("/static/")
-        or request.path in ["/login", "/logout", "/health"]
+        or request.path in ["/login", "/logout", "/health", "/sw.js", "/manifest.json", "/favicon.ico"]
     ):
         return None
 
@@ -145,6 +145,30 @@ def logout():
     session.pop("authenticated", None)
     logger.info("[AUTH] 로그아웃 완료")
     return redirect(url_for("login"))
+
+
+@app.route("/sw.js")
+def service_worker():
+    """PWA 서비스 워커 제공 (루트 스코프 적용)"""
+    response = app.send_static_file("sw.js")
+    response.headers["Content-Type"] = "application/javascript"
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route("/manifest.json")
+def pwa_manifest():
+    """PWA 웹앱 매니페스트 제공"""
+    response = app.send_static_file("manifest.json")
+    response.headers["Content-Type"] = "application/manifest+json"
+    return response
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """파비콘 제공"""
+    return app.send_static_file("icons/favicon.ico")
 
 
 @app.route("/")

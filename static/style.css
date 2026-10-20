@@ -56,25 +56,59 @@ body {
     align-items: center;
 }
 
-.brand h1 {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #0f172a;
+.brand {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
+}
+
+.brand-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+    flex-shrink: 0;
+}
+
+.brand h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
 }
 
 .tagline {
-    font-size: 0.9rem;
+    font-size: 0.86rem;
     color: var(--text-muted);
-    margin-top: 4px;
+    margin-top: 3px;
 }
 
 .header-status {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.btn-install {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #ffffff;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
+    transition: all 0.2s ease;
+}
+
+.btn-install:hover {
+    background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    transform: translateY(-1px);
 }
 
 .btn-logout {
@@ -97,6 +131,89 @@ body {
     background-color: #fef2f2;
     border-color: #fca5a5;
     box-shadow: 0 1px 3px rgba(185, 28, 28, 0.1);
+}
+
+/* PWA Mobile Chrome Install Floating Banner */
+.pwa-install-banner {
+    max-width: 1100px;
+    margin: 12px auto 0;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.pwa-install-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.pwa-icon {
+    font-size: 1.8rem;
+    flex-shrink: 0;
+}
+
+.pwa-text strong {
+    font-size: 0.95rem;
+    color: #1e3a8a;
+    display: block;
+}
+
+.pwa-text p {
+    font-size: 0.84rem;
+    color: #3b82f6;
+    margin-top: 2px;
+}
+
+.pwa-install-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.btn-pwa-action {
+    padding: 8px 16px;
+    background-color: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+    transition: all 0.2s ease;
+}
+
+.btn-pwa-action:hover {
+    background-color: #1d4ed8;
+}
+
+.btn-pwa-close {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.btn-pwa-close:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: #0f172a;
 }
 
 /* Container */
@@ -1088,20 +1205,239 @@ body {
     padding: 8px 12px;
 }
 
-/* Responsive */
+/* ==========================================================================
+   Mobile Optimization & Responsive Design (Smartphones & Tablets)
+   ========================================================================== */
+
 @media (max-width: 768px) {
+    body {
+        padding-bottom: 40px;
+    }
+
+    .app-header {
+        padding: 14px 0;
+        margin-bottom: 16px;
+    }
+
     .header-content {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
         gap: 12px;
+        padding: 0 14px;
     }
+
+    .brand {
+        gap: 10px;
+    }
+
+    .brand-logo {
+        width: 34px;
+        height: 34px;
+    }
+
+    .brand h1 {
+        font-size: 1.2rem;
+    }
+
+    .tagline {
+        font-size: 0.78rem;
+    }
+
+    .header-status {
+        width: 100%;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    .container {
+        padding: 0 12px;
+        gap: 16px;
+    }
+
+    .card {
+        padding: 20px 14px;
+        border-radius: var(--radius-md);
+    }
+
+    .section-title {
+        gap: 8px;
+    }
+
+    .section-title h2 {
+        font-size: 1.15rem;
+    }
+
+    .step-num {
+        width: 24px;
+        height: 24px;
+        font-size: 0.8rem;
+    }
+
+    /* PWA Banner Mobile */
+    .pwa-install-banner {
+        flex-direction: column;
+        align-items: stretch;
+        margin: 10px 14px 0;
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .pwa-install-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .btn-pwa-action {
+        flex: 1;
+        padding: 10px;
+        text-align: center;
+    }
+
+    /* Grid layouts */
     .metrics-grid {
         grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
     }
+
+    .metric-card {
+        padding: 12px 8px;
+    }
+
+    .metric-value {
+        font-size: 1.15rem;
+    }
+
+    /* Prevent auto-zoom on mobile inputs */
+    input[type="text"],
+    input[type="password"],
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+
+    /* Natural language question form */
+    .ask-input-box {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .btn-ask-submit {
+        width: 100%;
+        padding: 12px;
+    }
+
+    .ask-sample-chips {
+        gap: 6px;
+    }
+
+    .chip-sample {
+        font-size: 0.78rem;
+        padding: 6px 10px;
+    }
+
+    /* Suggestions & Params Panel */
+    .params-panel {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .param-group {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        width: 100%;
+    }
+
+    .param-group input,
+    .param-group select {
+        width: 100%;
+    }
+
+    .suggestions-grid {
+        grid-template-columns: 1fr;
+    }
+
     .mode-tabs {
         flex-direction: column;
     }
+
+    .mode-tab {
+        padding: 12px;
+    }
+
+    /* Chart & Table */
+    .chart-wrapper {
+        padding: 10px;
+        min-height: 280px;
+    }
+
+    .table-responsive {
+        -webkit-overflow-scrolling: touch;
+        margin: 0 -4px;
+    }
+
+    /* Chat Section */
+    .chat-section {
+        padding: 16px 12px;
+    }
+
     .chat-msg {
-        max-width: 95%;
+        max-width: 92%;
+    }
+
+    .chat-bubble {
+        padding: 10px 14px;
+        font-size: 0.9rem;
+    }
+
+    .quick-chips-list {
+        gap: 6px;
+    }
+
+    .quick-chip-btn {
+        font-size: 0.78rem;
+        padding: 6px 10px;
+    }
+
+    .chat-input-form {
+        gap: 6px;
+    }
+
+    .btn-chat-send {
+        padding: 10px 16px;
+    }
+
+    /* Report View & Markdown Export */
+    .report-view {
+        padding: 16px 12px;
+    }
+
+    .report-header-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .btn-download-md {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+}
+
+/* Extra small screens (e.g. 360px - 420px) */
+@media (max-width: 420px) {
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .header-status {
+        justify-content: space-between;
+    }
+
+    .badge {
+        font-size: 0.72rem;
+        padding: 3px 8px;
     }
 }
