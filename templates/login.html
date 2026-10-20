@@ -263,10 +263,49 @@
 
         <div class="login-footer">
             <span class="badge-secure">🛡️ 세션 기반 보안 인증 작동 중</span>
+            <div style="margin-top: 12px;">
+                <button type="button" id="btn-login-install" class="btn-install hidden" style="font-size: 0.85rem; padding: 8px 16px; border-radius: 20px; margin: 0 auto; display: inline-flex;">
+                    📲 홈 화면에 앱 설치하기
+                </button>
+            </div>
         </div>
     </div>
 
     <script>
+        // PWA 서비스 워커 등록 (로그인 화면에서도 Chrome이 PWA로 인식하도록 보장)
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", () => {
+                navigator.serviceWorker.register("/sw.js")
+                    .then(reg => console.log("[PWA-Login] 서비스 워커 등록 성공 (Scope: " + reg.scope + ")"))
+                    .catch(err => console.warn("[PWA-Login] 서비스 워커 등록 실패:", err));
+            });
+        }
+
+        let deferredPrompt = null;
+        const btnLoginInstall = document.getElementById("btn-login-install");
+
+        window.addEventListener("beforeinstallprompt", (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            if (btnLoginInstall) {
+                btnLoginInstall.classList.remove("hidden");
+            }
+        });
+
+        if (btnLoginInstall) {
+            btnLoginInstall.addEventListener("click", async () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const choice = await deferredPrompt.userChoice;
+                    console.log("[PWA-Login] 설치 선택:", choice.outcome);
+                    deferredPrompt = null;
+                    btnLoginInstall.classList.add("hidden");
+                } else {
+                    alert("스마트폰 크롬 우측 상단 더보기(⋮)에서 '홈 화면에 추가' 또는 '앱 설치'를 눌러 설치할 수 있습니다.");
+                }
+            });
+        }
+
         const loginForm = document.getElementById("login-form");
         const passwordInput = document.getElementById("password-input");
         const btnTogglePw = document.getElementById("btn-toggle-pw");

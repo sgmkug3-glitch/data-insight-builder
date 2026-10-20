@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import re
+import time
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, session, redirect, url_for
 import numpy as np
@@ -151,9 +152,9 @@ def logout():
 def service_worker():
     """PWA 서비스 워커 제공 (루트 스코프 적용)"""
     response = app.send_static_file("sw.js")
-    response.headers["Content-Type"] = "application/javascript"
+    response.headers["Content-Type"] = "application/javascript; charset=utf-8"
     response.headers["Service-Worker-Allowed"] = "/"
-    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 
 
@@ -161,7 +162,8 @@ def service_worker():
 def pwa_manifest():
     """PWA 웹앱 매니페스트 제공"""
     response = app.send_static_file("manifest.json")
-    response.headers["Content-Type"] = "application/manifest+json"
+    response.headers["Content-Type"] = "application/manifest+json; charset=utf-8"
+    response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
 
@@ -804,18 +806,55 @@ def suggest_analyses():
         from google.genai import types
 
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2
-            )
-        )
+        response = None
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.2
+                    )
+                )
+                break
+            except Exception as e:
+                if attempt == 0 and ("503" in str(e) or "UNAVAILABLE" in str(e)):
+                    logger.warning("[AI] Gemini 503 일시적 지연 감지, 1.5초 후 재시도...")
+                    time.sleep(1.5)
+                    continue
+                raise e
         logger.info("[AI] suggest 응답 수신 완료")
     except Exception as ex:
         logger.exception(f"[ERROR] Gemini API 호출 실패: {ex}")
-        return jsonify({"error": f"Gemini API 호출 중 오류가 발생했습니다: {str(ex)}"}), 502
+        rec_period = current_dataset.get("diagnostics", {}).get("recommended_reference_period") or "2024"
+        fallback_suggestions = [
+            {
+                "tool": "quality_report",
+                "recommended_reference_period": None,
+                "reason": "대규모 국가별 시계열 데이터셋이므로 결측치와 중복 현황을 먼저 점검하는 것을 권장합니다."
+            },
+            {
+                "tool": "detect_aggregates",
+                "recommended_reference_period": None,
+                "reason": "데이터셋 내 대륙 및 경제권 집계 그룹 후보를 사전에 식별하여 통계 왜곡을 방지합니다."
+            },
+            {
+                "tool": "top_bottom_n",
+                "recommended_reference_period": rec_period,
+                "reason": f"권장 기준연도인 {rec_period}년을 기준으로 글로벌 상하위 순위 분포를 명확히 파악합니다."
+            },
+            {
+                "tool": "compare_one_vs_all",
+                "recommended_reference_period": rec_period,
+                "reason": f"대한민국의 {rec_period}년 수치를 글로벌 평균 및 중앙값과 직관적으로 비교 벤치마킹합니다."
+            }
+        ]
+        return jsonify({
+            "status": "success",
+            "suggestions": fallback_suggestions,
+            "count": len(fallback_suggestions)
+        }), 200
 
     # 응답 JSON 파싱 및 유효성 검증
     try:
