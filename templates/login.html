@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>보안 접속 인증 - AI Data Insight Builder</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        .login-card {
+            background: #ffffff;
+            border-radius: 18px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+            max-width: 420px;
+            width: 100%;
+            padding: 40px 32px;
+            text-align: center;
+            animation: fadeIn 0.4s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 6px;
+            background: linear-gradient(90deg, #3b82f6, #6366f1, #8b5cf6);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-8px); }
+            40%, 80% { transform: translateX(8px); }
+        }
+
+        .shake {
+            animation: shake 0.4s ease-in-out;
+        }
+
+        .login-icon-box {
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 20px;
+            background: #eff6ff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 34px;
+            border: 2px solid #dbeafe;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+
+        .login-title {
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 8px;
+            letter-spacing: -0.3px;
+        }
+
+        .login-desc {
+            font-size: 0.92rem;
+            color: #64748b;
+            margin-bottom: 28px;
+            line-height: 1.5;
+            word-break: keep-all;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .input-group {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .login-input {
+            width: 100%;
+            padding: 14px 48px 14px 18px;
+            font-size: 1.15rem;
+            font-weight: 600;
+            letter-spacing: 4px;
+            text-align: center;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            outline: none;
+            transition: all 0.2s ease;
+            color: #0f172a;
+            background-color: #f8fafc;
+        }
+
+        .login-input:focus {
+            border-color: #3b82f6;
+            background-color: #ffffff;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+        }
+
+        .toggle-pw-btn {
+            position: absolute;
+            right: 14px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            color: #94a3b8;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s;
+        }
+
+        .toggle-pw-btn:hover {
+            color: #475569;
+        }
+
+        .btn-unlock {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: #ffffff;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-unlock:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .btn-unlock:active {
+            transform: translateY(0);
+        }
+
+        .error-banner {
+            background-color: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #b91c1c;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.88rem;
+            font-weight: 500;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-align: left;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .error-banner.hidden {
+            display: none;
+        }
+
+        .login-footer {
+            margin-top: 24px;
+            font-size: 0.82rem;
+            color: #94a3b8;
+            border-top: 1px solid #f1f5f9;
+            padding-top: 16px;
+        }
+
+        .badge-secure {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background-color: #f1f5f9;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            color: #475569;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="login-page">
+    <div class="login-card" id="login-card">
+        <div class="login-icon-box">
+            🔐
+        </div>
+        <h1 class="login-title">AI Data Insight Builder</h1>
+        <p class="login-desc">
+            안전한 데이터 분석 환경을 위해 <strong>비밀번호</strong>를 입력해주세요.
+        </p>
+
+        {% if error %}
+        <div class="error-banner" id="server-error-banner">
+            <span>⚠️</span>
+            <span>{{ error }}</span>
+        </div>
+        {% endif %}
+
+        <div class="error-banner hidden" id="client-error-banner">
+            <span>⚠️</span>
+            <span id="client-error-msg">비밀번호가 올바르지 않습니다.</span>
+        </div>
+
+        <form method="POST" action="/login" class="login-form" id="login-form">
+            <div class="input-group">
+                <input 
+                    type="password" 
+                    name="password" 
+                    id="password-input" 
+                    class="login-input" 
+                    placeholder="비밀번호 입력"
+                    maxlength="20"
+                    required 
+                    autofocus 
+                    autocomplete="current-password"
+                />
+                <button type="button" id="btn-toggle-pw" class="toggle-pw-btn" title="비밀번호 표시/숨기기" aria-label="비밀번호 표시/숨기기">
+                    👁️
+                </button>
+            </div>
+
+            <button type="submit" class="btn-unlock" id="btn-submit">
+                <span>🔓</span>
+                <span>접속하기</span>
+            </button>
+        </form>
+
+        <div class="login-footer">
+            <span class="badge-secure">🛡️ 세션 기반 보안 인증 작동 중</span>
+        </div>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById("login-form");
+        const passwordInput = document.getElementById("password-input");
+        const btnTogglePw = document.getElementById("btn-toggle-pw");
+        const loginCard = document.getElementById("login-card");
+        const clientErrorBanner = document.getElementById("client-error-banner");
+        const clientErrorMsg = document.getElementById("client-error-msg");
+        const btnSubmit = document.getElementById("btn-submit");
+
+        // 비밀번호 표시/숨기기 토글
+        btnTogglePw.addEventListener("click", () => {
+            if (passwordInput.type === "password") {
+                passwordInput.type = "text";
+                btnTogglePw.textContent = "🙈";
+            } else {
+                passwordInput.type = "password";
+                btnTogglePw.textContent = "👁️";
+            }
+            passwordInput.focus();
+        });
+
+        // 비동기 로그인 시도 (흔들림 애니메이션 효과 및 즉각적 피드백)
+        loginForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const password = passwordInput.value.trim();
+
+            if (!password) {
+                showError("비밀번호를 입력해주세요.");
+                return;
+            }
+
+            btnSubmit.disabled = true;
+            btnSubmit.innerHTML = `<span>⏳</span><span>확인 중...</span>`;
+
+            try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ password: password })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    window.location.href = data.redirect || "/";
+                } else {
+                    showError(data.error || "비밀번호가 올바르지 않습니다.");
+                }
+            } catch (err) {
+                // 네트워크 오류 시 폼 직접 전송으로 폴백
+                loginForm.submit();
+            } finally {
+                btnSubmit.disabled = false;
+                btnSubmit.innerHTML = `<span>🔓</span><span>접속하기</span>`;
+            }
+        });
+
+        function showError(msg) {
+            clientErrorMsg.textContent = msg;
+            clientErrorBanner.classList.remove("hidden");
+            loginCard.classList.remove("shake");
+            void loginCard.offsetWidth; // 트리거 리플로우
+            loginCard.classList.add("shake");
+            passwordInput.value = "";
+            passwordInput.focus();
+        }
+    </script>
+</body>
+</html>
