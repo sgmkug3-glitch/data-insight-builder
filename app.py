@@ -81,12 +81,16 @@ def check_authentication():
     elif norm_path.startswith("/api/index"):
         norm_path = norm_path[len("/api/index"):] or "/"
 
-    # 1. 인증 제외 대상: 정적 파일, 헬스체크, 로그인/로그아웃 페이지, PWA 매니페스트 및 서비스워커
-    exempt_paths = ["/login", "/logout", "/health", "/sw.js", "/manifest.json", "/favicon.ico"]
+    # 1. 로그인/로그아웃, 정적 파일, 헬스체크, PWA 엔드포인트는 절대 리다이렉트 금지 (무한 루프 방지)
     if (
-        request.path.startswith("/static/")
+        "login" in request.path
+        or "login" in norm_path
+        or request.endpoint == "login"
+        or "logout" in request.path
+        or "logout" in norm_path
+        or request.path.startswith("/static/")
         or request.path.startswith("/public/")
-        or norm_path in exempt_paths
+        or norm_path in ["/login", "/logout", "/health", "/sw.js", "/manifest.json", "/favicon.ico"]
     ):
         return None
 
@@ -124,8 +128,7 @@ def request_entity_too_large(error):
 def login():
     """보안 로그인(비밀번호 0412) 처리 및 화면 제공"""
     if request.method == "GET":
-        if session.get("authenticated"):
-            return redirect("/")
+        # GET 요청 시 절대 리다이렉트하지 않고 무조건 로그인 폼 제공 (루프 원천 차단)
         return render_template("login.html")
 
     # POST 처리
