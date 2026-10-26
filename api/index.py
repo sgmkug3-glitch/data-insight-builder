@@ -27,12 +27,15 @@ class VercelPathMiddleware:
                 environ["PATH_INFO"] = parsed
 
         path = environ.get("PATH_INFO", "")
-        # 2. /api/index 접두사 제거
+        # 2. /api/index 또는 /api 접두사 제거
         if path.startswith("/api/index.py"):
             path = path[len("/api/index.py"):] or "/"
             environ["PATH_INFO"] = path
         elif path.startswith("/api/index"):
             path = path[len("/api/index"):] or "/"
+            environ["PATH_INFO"] = path
+        elif path.startswith("/api"):
+            path = path[len("/api"):] or "/"
             environ["PATH_INFO"] = path
 
         return self.wsgi_app(environ, start_response)
