@@ -199,19 +199,30 @@ def favicon():
     return app.send_static_file("icons/favicon.ico")
 
 
-@app.route("/")
-@app.route("/api")
-@app.route("/api/")
-@app.route("/api/index")
-@app.route("/api/index/")
+@app.route("/", methods=["GET", "POST"])
+@app.route("/api", methods=["GET", "POST"])
+@app.route("/api/", methods=["GET", "POST"])
+@app.route("/api/index", methods=["GET", "POST"])
+@app.route("/api/index/", methods=["GET", "POST"])
 def index():
-    """메인 페이지를 반환합니다. (템플릿 준비 전에는 기본 안내 메시지 표시)"""
-    if "debug" in request.args or request.headers.get("X-Debug"):
-        env_keys = {k: str(v) for k, v in request.environ.items() if isinstance(v, (str, int, bool))}
-        return jsonify({
-            "path": request.path,
-            "environ": env_keys
-        })
+    """메인 페이지를 반환하거나 Vercel 서버리스 환경에서 POST 요청을 스마트 디스패치합니다."""
+    if request.method == "POST":
+        if "file" in request.files:
+            return inspect_file()
+        data = request.get_json(silent=True) or {}
+        if "password" in data or "password" in request.form:
+            return login()
+        if "tool" in data:
+            return run_analysis()
+        if "query" in data:
+            return ask_natural_language()
+        if "message" in data:
+            return chat_followup()
+        if "mode" in data:
+            return explain_analysis()
+        # 기타 미지정 POST 요청은 login으로 처리
+        return login()
+
     logger.info("[RESPONSE] status=200 path=/")
     try:
         return render_template("index.html")
