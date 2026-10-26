@@ -1441,3 +1441,158 @@ body {
         padding: 3px 8px;
     }
 }
+
+/* ========================================================================= */
+/* 보안 PIN 잠금 오버레이 (Auth Lock Overlay) */
+/* ========================================================================= */
+.auth-lock-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.auth-lock-overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.auth-card {
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 36px 28px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.3);
+    animation: authCardIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes authCardIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.auth-icon-wrap {
+    width: 64px;
+    height: 64px;
+    background: #eff6ff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 2rem;
+    box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
+.auth-card h2 {
+    font-size: 1.4rem;
+    color: #1e293b;
+    margin-bottom: 6px;
+    font-weight: 700;
+}
+
+.auth-subtitle {
+    font-size: 0.88rem;
+    color: #64748b;
+    margin-bottom: 24px;
+    line-height: 1.4;
+}
+
+.pin-display-wrap {
+    margin-bottom: 16px;
+}
+
+.pin-input {
+    width: 100%;
+    font-size: 1.75rem;
+    letter-spacing: 12px;
+    text-align: center;
+    padding: 12px 16px;
+    border: 2px solid #cbd5e1;
+    border-radius: 12px;
+    outline: none;
+    background: #f8fafc;
+    color: #0f172a;
+    transition: all 0.2s ease;
+}
+
+.pin-input:focus {
+    border-color: #2563eb;
+    background: #ffffff;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+}
+
+.auth-error-msg {
+    color: #ef4444;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 16px;
+    background: #fef2f2;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #fecaca;
+}
+
+.btn-unlock {
+    width: 100%;
+    padding: 13px 20px;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 12px;
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+.btn-unlock:hover {
+    background: #1d4ed8;
+}
+
+.pin-hint {
+    margin-top: 18px;
+}
+
+.hint-badge {
+    display: inline-block;
+    font-size: 0.78rem;
+    color: #64748b;
+    background: #f1f5f9;
+    padding: 4px 10px;
+    border-radius: 20px;
+}
+
+@keyframes shakePin {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-8px); }
+    40%, 80% { transform: translateX(8px); }
+}
+
+.shake {
+    animation: shakePin 0.4s ease;
+}
+

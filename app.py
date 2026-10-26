@@ -28,8 +28,8 @@ app.secret_key = os.getenv("SECRET_KEY", "data-insight-builder-auth-0412-key")
 # 보안 접속 비밀번호 (기본값: 0412)
 APP_PASSWORD = os.getenv("APP_PASSWORD", "0412")
 
-# 업로드 크기 제한 설정 (기본값 10MB)
-max_upload_mb = int(os.getenv("MAX_UPLOAD_MB", 10))
+# 업로드 크기 제한 설정 (기본값 100MB)
+max_upload_mb = int(os.getenv("MAX_UPLOAD_MB", 100))
 app.config["MAX_CONTENT_LENGTH"] = max_upload_mb * 1024 * 1024
 
 # 메모리 전역 데이터셋 저장소 (디스크 영구 저장 대신 1개만 메모리 보관)
@@ -237,54 +237,87 @@ def health():
     return jsonify(response_data), 200
 
 
-def detect_and_parse_csv(file_bytes, filename):
-    """인코딩 순차 시도, 헤더 자동 감지, CSV 파싱 및 상세 진단을 수행합니다."""
-    # 1. 인코딩 순차 시도
-    decoded_text = None
+def detect_and_parse_data(file_bytes, filename):
+    """CSV(인코딩 순차 시도) 및 엑셀(.xlsx, .xls) 파싱, 헤더 자동 감지, 및 상세 진단을 수행합니다."""
+    is_excel = filename.lower().endswith((".xlsx", ".xls"))
+    skiprows = 0
     used_encoding = None
 
-    for enc in ENCODING_CANDIDATES:
+    if is_excel:
+        used_encoding = "Excel (OpenPyXL)"
+        excel_buf = io.BytesIO(file_bytes)
         try:
-            decoded_text = file_bytes.decode(enc)
-            used_encoding = enc
-            logger.info(f"[ENCODING] {enc} 시도 성공 (filename={filename})")
-            break
-        except (UnicodeDecodeError, LookupError):
-            logger.info(f"[ENCODING] {enc} 시도 실패 (디코딩 에러)")
-            continue
+            xl = pd.ExcelFile(excel_buf)
+            sheet_name = xl.sheet_names[0]
+            logger.info(f"[EXCEL] 엑셀 파일 로드: 시트 목록={xl.sheet_names}, 기본 시트={sheet_name}")
 
-    if decoded_text is None:
-        raise ValueError("지원하는 인코딩(utf-8-sig, utf-8, cp949, euc-kr)으로 파일을 읽을 수 없습니다.")
+            # 헤더 감지용 샘플 로드 (최대 25행)
+            excel_buf.seek(0)
+            df_sample = pd.read_excel(excel_buf, sheet_name=sheet_name, nrows=25, header=None)
 
-    lines = decoded_text.splitlines()
-    if not lines:
-        raise ValueError("업로드된 파일의 내용이 비어 있습니다.")
+            max_cols = 0
+            for _, row in df_sample.iterrows():
+                clean = [c for c in row if pd.notna(c) and str(c).strip()]
+                if len(clean) > max_cols:
+                    max_cols = len(clean)
 
-    # 2. 앞쪽 여러 줄을 검사하여 헤더 행 자동 감지
-    sample_lines = lines[:25]
-    parsed_sample = list(csv.reader(sample_lines))
-    non_empty_rows = [r for r in parsed_sample if any(c.strip() for c in r)]
-    if not non_empty_rows:
-        raise ValueError("내용이 비어 있어 유효한 행을 찾을 수 없습니다.")
+            if max_cols > 0:
+                for idx, row in df_sample.iterrows():
+                    clean = [c for c in row if pd.notna(c) and str(c).strip()]
+                    if len(clean) >= max_cols * 0.7 and len(clean) >= 2:
+                        skiprows = int(idx)
+                        break
 
-    max_cols = max(len([c for c in r if c.strip()]) for r in non_empty_rows)
-    skiprows = 0
-    for idx, row in enumerate(parsed_sample):
-        clean = [c.strip() for c in row if c.strip()]
-        if len(clean) >= max_cols * 0.7 and len(clean) >= 2:
-            skiprows = idx
-            break
+            logger.info(f"[EXCEL] 헤더 감지 완료 (건너뛴 줄 수={skiprows})")
+            excel_buf.seek(0)
+            df = pd.read_excel(excel_buf, sheet_name=sheet_name, skiprows=skiprows)
+        except Exception as e:
+            logger.error(f"[ERROR] 엑셀 파싱 실패: {e}")
+            raise ValueError(f"엑셀 파일(.xlsx, .xls) 파싱 중 오류가 발생했습니다: {str(e)}")
+    else:
+        # 1. 인코딩 순차 시도 (CSV)
+        decoded_text = None
+        for enc in ENCODING_CANDIDATES:
+            try:
+                decoded_text = file_bytes.decode(enc)
+                used_encoding = enc
+                logger.info(f"[ENCODING] {enc} 시도 성공 (filename={filename})")
+                break
+            except (UnicodeDecodeError, LookupError):
+                logger.info(f"[ENCODING] {enc} 시도 실패 (디코딩 에러)")
+                continue
 
-    logger.info(f"[HEADER] 헤더 줄 감지 결과 (건너뛴 줄 수={skiprows}, 헤더 행 인덱스={skiprows})")
+        if decoded_text is None:
+            raise ValueError("지원하는 인코딩(utf-8-sig, utf-8, cp949, euc-kr)으로 파일을 읽을 수 없습니다.")
 
-    # 3. Pandas로 CSV 파싱
-    try:
-        df = pd.read_csv(io.StringIO(decoded_text), skiprows=skiprows)
-    except Exception as e:
-        logger.error(f"[ERROR] Pandas 파싱 실패: {e}")
-        raise ValueError(f"CSV 파싱 중 오류가 발생했습니다: {str(e)}")
+        lines = decoded_text.splitlines()
+        if not lines:
+            raise ValueError("업로드된 파일의 내용이 비어 있습니다.")
 
-    logger.info(f"[CSV] parsing 완료 rows={len(df)} columns={len(df.columns)}")
+        # 2. 앞쪽 여러 줄을 검사하여 헤더 행 자동 감지
+        sample_lines = lines[:25]
+        parsed_sample = list(csv.reader(sample_lines))
+        non_empty_rows = [r for r in parsed_sample if any(c.strip() for c in r)]
+        if not non_empty_rows:
+            raise ValueError("내용이 비어 있어 유효한 행을 찾을 수 없습니다.")
+
+        max_cols = max(len([c for c in r if c.strip()]) for r in non_empty_rows)
+        for idx, row in enumerate(parsed_sample):
+            clean = [c.strip() for c in row if c.strip()]
+            if len(clean) >= max_cols * 0.7 and len(clean) >= 2:
+                skiprows = idx
+                break
+
+        logger.info(f"[HEADER] 헤더 줄 감지 결과 (건너뛴 줄 수={skiprows}, 헤더 행 인덱스={skiprows})")
+
+        # 3. Pandas로 CSV 파싱
+        try:
+            df = pd.read_csv(io.StringIO(decoded_text), skiprows=skiprows)
+        except Exception as e:
+            logger.error(f"[ERROR] Pandas 파싱 실패: {e}")
+            raise ValueError(f"CSV 파싱 중 오류가 발생했습니다: {str(e)}")
+
+    logger.info(f"[DATA] parsing 완료 rows={len(df)} columns={len(df.columns)}")
 
     # 4. 열별 데이터 타입 및 분류
     dtypes = {str(c): str(df[c].dtype) for c in df.columns}
@@ -390,10 +423,13 @@ def detect_and_parse_csv(file_bytes, filename):
 
     return diagnostics
 
+# 하위 호환성 유지용 별칭
+detect_and_parse_csv = detect_and_parse_data
+
 
 @app.route("/inspect", methods=["POST"])
 def inspect_file():
-    """CSV 업로드, 인코딩·헤더 감지, 13개 항목 종합 진단 결과 JSON 반환"""
+    """CSV 및 엑셀(.xlsx, .xls) 업로드, 인코딩·헤더 감지, 13개 항목 종합 진단 결과 JSON 반환"""
     if "file" not in request.files:
         msg = "업로드할 파일이 선택되지 않았습니다."
         logger.warning(f"[ERROR] {msg}")
@@ -407,8 +443,9 @@ def inspect_file():
         logger.warning(f"[ERROR] {msg}")
         return jsonify({"error": msg}), 400
 
-    if not filename.lower().endswith(".csv"):
-        msg = "CSV 형식(.csv)의 파일만 지원됩니다."
+    lower_name = filename.lower()
+    if not (lower_name.endswith(".csv") or lower_name.endswith(".xlsx") or lower_name.endswith(".xls")):
+        msg = "CSV(.csv) 및 엑셀(.xlsx, .xls) 형식의 파일만 지원됩니다."
         logger.warning(f"[ERROR] {msg}")
         return jsonify({"error": msg}), 400
 
@@ -422,7 +459,7 @@ def inspect_file():
         return jsonify({"error": msg}), 400
 
     try:
-        diag = detect_and_parse_csv(file_bytes, filename)
+        diag = detect_and_parse_data(file_bytes, filename)
     except ValueError as ve:
         logger.warning(f"[ERROR] {str(ve)}")
         return jsonify({"error": str(ve)}), 400

@@ -17,9 +17,37 @@
 
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS (Excel .xlsx / .xls 지원) CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+    <!-- 보안 PIN 잠금 오버레이 (초기 진입 보안 잠금) -->
+    <div id="auth-lock-overlay" class="auth-lock-overlay">
+        <div class="auth-card">
+            <div class="auth-icon-wrap">
+                <span class="auth-icon">🔒</span>
+            </div>
+            <h2>보안 접속 인증</h2>
+            <p class="auth-subtitle">AI Data Insight Builder 이용을 위해 보안 PIN 번호를 입력하세요.</p>
+            
+            <form id="lock-form" onsubmit="return false;">
+                <div class="pin-display-wrap">
+                    <input type="password" id="lock-pin-input" class="pin-input" maxlength="4" placeholder="••••" autocomplete="off" inputmode="numeric" pattern="[0-9]*" autofocus />
+                </div>
+                <div id="lock-error-msg" class="auth-error-msg hidden"></div>
+                
+                <button type="submit" id="btn-unlock" class="btn-unlock">
+                    <span>잠금 해제</span> 🔓
+                </button>
+            </form>
+            
+            <div class="pin-hint">
+                <span class="hint-badge">기본 비밀번호: 0412</span>
+            </div>
+        </div>
+    </div>
+
     <header class="app-header">
         <div class="header-content">
             <div class="brand">
@@ -66,16 +94,16 @@
         <section id="section-upload" class="card">
             <div class="section-title">
                 <span class="step-num">1</span>
-                <h2>CSV 파일 업로드 및 상태 진단</h2>
+                <h2>CSV 및 엑셀 파일 업로드 및 상태 진단</h2>
             </div>
-            <p class="section-desc">공식 통계 포털(World Bank 등)에서 내려받은 원본 CSV 파일을 업로드하세요.</p>
+            <p class="section-desc">공식 통계 포털(World Bank 등)에서 내려받은 CSV 또는 엑셀(.xlsx, .xls) 파일을 업로드하세요.</p>
 
             <div class="upload-zone" id="drop-zone">
-                <input type="file" id="file-input" accept=".csv" />
+                <input type="file" id="file-input" accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
                 <div class="upload-content">
-                    <span class="upload-icon">📁</span>
-                    <p class="upload-prompt">클릭하여 CSV 파일을 선택하거나 여기로 드래그하세요</p>
-                    <p class="upload-limit">최대 허용 크기: 10MB (인코딩 자동 감지 및 메타데이터 헤더 자동 탐색)</p>
+                    <span class="upload-icon">📊</span>
+                    <p class="upload-prompt">클릭하여 CSV 또는 엑셀(.xlsx, .xls) 파일을 선택하거나 여기로 드래그하세요</p>
+                    <p class="upload-limit">최대 허용 크기: 100MB (CSV 인코딩 자동 감지, 엑셀 시트 및 헤더 자동 탐색)</p>
                 </div>
             </div>
 

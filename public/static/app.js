@@ -60,6 +60,120 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedFileSize = document.getElementById("selected-file-size");
     const btnInspect = document.getElementById("btn-inspect");
 
+    // =========================================================================
+    // 보안 PIN 잠금 관리 (초기 진입 보안 잠금)
+    // =========================================================================
+    const lockOverlay = document.getElementById("auth-lock-overlay");
+    const lockForm = document.getElementById("lock-form");
+    const lockPinInput = document.getElementById("lock-pin-input");
+    const lockErrorMsg = document.getElementById("lock-error-msg");
+    const btnUnlock = document.getElementById("btn-unlock");
+    const btnLogout = document.querySelector(".btn-logout");
+
+    function getAuthHeaders() {
+        const pin = sessionStorage.getItem("app_pin") || "0412";
+        return { "X-App-Password": pin };
+    }
+
+    function showLockOverlay(msg = "") {
+        if (!lockOverlay) return;
+        lockOverlay.classList.remove("hidden");
+        if (lockPinInput) {
+            lockPinInput.value = "";
+            setTimeout(() => lockPinInput.focus(), 150);
+        }
+        if (msg && lockErrorMsg) {
+            lockErrorMsg.textContent = msg;
+            lockErrorMsg.classList.remove("hidden");
+        } else if (lockErrorMsg) {
+            lockErrorMsg.classList.add("hidden");
+        }
+    }
+
+    function hideLockOverlay() {
+        if (!lockOverlay) return;
+        lockOverlay.classList.add("hidden");
+    }
+
+    // 초기 상태 검사: 이미 인증된 세션인지 확인
+    if (sessionStorage.getItem("app_authenticated") === "true") {
+        hideLockOverlay();
+    } else {
+        showLockOverlay();
+    }
+
+    if (lockForm) {
+        lockForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const pin = lockPinInput ? lockPinInput.value.trim() : "";
+            if (!pin) {
+                if (lockErrorMsg) {
+                    lockErrorMsg.textContent = "PIN 4자리를 입력해주세요.";
+                    lockErrorMsg.classList.remove("hidden");
+                }
+                return;
+            }
+
+            if (btnUnlock) {
+                btnUnlock.disabled = true;
+                btnUnlock.textContent = "인증 확인 중...";
+            }
+
+            try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ password: pin })
+                });
+
+                if (res.ok) {
+                    sessionStorage.setItem("app_authenticated", "true");
+                    sessionStorage.setItem("app_pin", pin);
+                    hideLockOverlay();
+                    console.log("[AUTH] PIN 잠금 해제 성공");
+                    checkServerHealth();
+                } else {
+                    const data = await res.json().catch(() => ({}));
+                    if (lockErrorMsg) {
+                        lockErrorMsg.textContent = data.error || "비밀번호가 올바르지 않습니다. (기본값: 0412)";
+                        lockErrorMsg.classList.remove("hidden");
+                    }
+                    if (lockPinInput) {
+                        lockPinInput.classList.add("shake");
+                        setTimeout(() => lockPinInput.classList.remove("shake"), 500);
+                        lockPinInput.select();
+                    }
+                }
+            } catch (err) {
+                // 오프라인 / 네트워크 지연 시 클라이언트 기본값 검증 지원
+                if (pin === "0412") {
+                    sessionStorage.setItem("app_authenticated", "true");
+                    sessionStorage.setItem("app_pin", pin);
+                    hideLockOverlay();
+                } else if (lockErrorMsg) {
+                    lockErrorMsg.textContent = "인증 서버 연결 실패 (" + err.message + ")";
+                    lockErrorMsg.classList.remove("hidden");
+                }
+            } finally {
+                if (btnUnlock) {
+                    btnUnlock.disabled = false;
+                    btnUnlock.innerHTML = "<span>잠금 해제</span> 🔓";
+                }
+            }
+        });
+    }
+
+    // 헤더 잠금 버튼 클릭 시 즉시 화면 잠금
+    if (btnLogout) {
+        btnLogout.addEventListener("click", (e) => {
+            e.preventDefault();
+            sessionStorage.removeItem("app_authenticated");
+            sessionStorage.removeItem("app_pin");
+            fetch("/logout").catch(() => {});
+            showLockOverlay();
+        });
+    }
+
     const sectionInspect = document.getElementById("section-inspect");
     const valEncoding = document.getElementById("val-encoding");
     const valSkiprows = document.getElementById("val-skiprows");
@@ -186,15 +300,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     function handleFileSelection(file) {
-        if (!file.name.toLowerCase().endsWith(".csv")) {
-            alert("CSV 형식(.csv)의 파일만 업로드할 수 있습니다.");
+        const lowerName = file.name.toLowerCase();
+        const isCsv = lowerName.endsWith(".csv");
+        const isExcel = lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls");
+
+        if (!isCsv && !isExcel) {
+            alert("CSV 형식(.csv) 또는 엑셀 형식(.xlsx, .xls)의 파일만 업로드할 수 있습니다.");
             console.warn("[ERROR] 비정상 파일 형식 시도:", file.name);
             return;
         }
 
         const sizeMB = file.size / (1024 * 1024);
-        if (sizeMB > 10) {
-            alert("파일 크기가 10MB를 초과했습니다. 더 작은 파일을 선택해주세요.");
+        if (sizeMB > 100) {
+            alert(`파일 크기가 100MB를 초과했습니다 (${sizeMB.toFixed(1)}MB). 100MB 이하의 파일을 선택해주세요.`);
             console.warn("[ERROR] 파일 크기 초과:", file.size);
             return;
         }
@@ -222,16 +340,43 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("[INSPECT] 진단 요청 시작");
 
         const formData = new FormData();
-        formData.append("file", selectedFile);
+        const lowerName = selectedFile.name.toLowerCase();
+        const isExcel = lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls");
+
+        // Vercel 4.5MB 서버리스 페이로드 한계 대응:
+        // 4MB 이상의 엑셀 파일은 브라우저의 SheetJS(XLSX)로 즉시 CSV Blob으로 추출 변환하여 전송
+        if (isExcel && selectedFile.size > 4 * 1024 * 1024 && typeof XLSX !== "undefined") {
+            btnInspect.textContent = "엑셀 데이터 최적화 변환 중...";
+            try {
+                const arrayBuffer = await selectedFile.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: "array" });
+                const firstSheetName = workbook.SheetNames[0];
+                const firstSheet = workbook.Sheets[firstSheetName];
+                const csvData = XLSX.utils.sheet_to_csv(firstSheet);
+                const csvBlob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvData], { type: "text/csv;charset=utf-8" });
+                formData.append("file", csvBlob, selectedFile.name.replace(/\.[^/.]+$/, "") + ".csv");
+                console.log(`[UPLOAD] SheetJS 브라우저 변환 완료: ${selectedFile.size} bytes -> ${csvBlob.size} bytes`);
+            } catch (err) {
+                console.warn("[WARN] SheetJS 변환 실패, 원본 전송 시도:", err);
+                formData.append("file", selectedFile);
+            }
+        } else {
+            formData.append("file", selectedFile);
+        }
 
         try {
             const res = await fetch("/inspect", {
                 method: "POST",
+                headers: getAuthHeaders(),
                 body: formData
             });
 
             const data = await res.json();
             if (!res.ok) {
+                if (res.status === 401) {
+                    showLockOverlay("보안 인증이 필요합니다. 먼저 PIN을 입력해주세요.");
+                    return;
+                }
                 throw new Error(data.error || "파일 진단 실패");
             }
 
@@ -342,7 +487,10 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const res = await fetch("/ask", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...getAuthHeaders()
+                },
                 body: JSON.stringify({ query: text })
             });
 
@@ -452,7 +600,10 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("[SUGGEST] 제안 요청 시작");
 
         try {
-            const res = await fetch("/suggest", { method: "POST" });
+            const res = await fetch("/suggest", {
+                method: "POST",
+                headers: getAuthHeaders()
+            });
             const data = await res.json();
 
             if (!res.ok) {
@@ -563,7 +714,10 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const res = await fetch("/run", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...getAuthHeaders()
+                },
                 body: JSON.stringify({
                     tool: selectedTool,
                     params: selectedParams
@@ -856,7 +1010,10 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const res = await fetch("/explain", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...getAuthHeaders()
+                },
                 body: JSON.stringify({
                     mode: currentExplainMode,
                     run_result: lastRunResult,
@@ -1055,7 +1212,10 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const res = await fetch("/chat", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...getAuthHeaders()
+                },
                 body: JSON.stringify({
                     message: text,
                     history: chatHistory
