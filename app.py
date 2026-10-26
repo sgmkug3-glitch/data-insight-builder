@@ -74,14 +74,20 @@ def check_authentication():
     """요청 로깅 및 세션 기반 비밀번호 보안 인증 검사"""
     logger.info(f"[REQUEST] {request.method} {request.path}")
 
-    # Vercel 서버리스 환경에서 /api/index 또는 /api가 붙는 경우 경로 정규화
-    norm_path = request.path
-    if norm_path.startswith("/api/index.py"):
-        norm_path = norm_path[len("/api/index.py"):] or "/"
-    elif norm_path.startswith("/api/index"):
-        norm_path = norm_path[len("/api/index"):] or "/"
-    elif norm_path.startswith("/api"):
-        norm_path = norm_path[len("/api"):] or "/"
+    # Vercel 서버리스 환경에서 /api/index 또는 /api가 붙는 경우 및 __vercel_path 파라미터 경로 정규화
+    vpath = request.args.get("__vercel_path")
+    if vpath:
+        while vpath.startswith("//"):
+            vpath = vpath[1:]
+        norm_path = vpath or "/"
+    else:
+        norm_path = request.path
+        if norm_path.startswith("/api/index.py"):
+            norm_path = norm_path[len("/api/index.py"):] or "/"
+        elif norm_path.startswith("/api/index"):
+            norm_path = norm_path[len("/api/index"):] or "/"
+        elif norm_path.startswith("/api"):
+            norm_path = norm_path[len("/api"):] or "/"
 
     # 1. 로그인/로그아웃, 정적 파일, 헬스체크, PWA 엔드포인트는 절대 리다이렉트 금지 (무한 루프 방지)
     if (
