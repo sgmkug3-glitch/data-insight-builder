@@ -206,14 +206,6 @@ def favicon():
 @app.route("/api/index/")
 def index():
     """메인 페이지를 반환합니다. (템플릿 준비 전에는 기본 안내 메시지 표시)"""
-    if request.args.get("debug"):
-        return jsonify({
-            "path": request.path,
-            "query_string": request.environ.get("QUERY_STRING"),
-            "path_info": request.environ.get("PATH_INFO"),
-            "headers": dict(request.headers),
-            "authenticated": session.get("authenticated", False)
-        })
     logger.info("[RESPONSE] status=200 path=/")
     try:
         return render_template("index.html")
