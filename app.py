@@ -1310,8 +1310,9 @@ def chat_followup():
 if __name__ == "__main__":
     debug_mode = os.getenv("FLASK_DEBUG", "true").lower() == "true"
     port = int(os.getenv("PORT", 5000))
-    logger.info(f"[START] Flask 서버 시작 (Port: {port}, Debug: {debug_mode})")
-    app.run(host="127.0.0.1", port=port, debug=debug_mode)
+    host = os.getenv("HOST", "0.0.0.0")
+    logger.info(f"[START] Flask 서버 시작 (Host: {host}, Port: {port}, Debug: {debug_mode})")
+    app.run(host=host, port=port, debug=debug_mode)
 
 
 
