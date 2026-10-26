@@ -528,6 +528,61 @@ def inspect_file():
     except Exception as ce:
         logger.warning(f"[CACHE] /tmp 캐시 저장 실패 (무시 가능): {ce}")
 
+    # 업로드된 파일 특성에 맞춘 맞춤형 추천 자연어 질문 4개 동적 생성
+    str_cols = diag.get("string_columns", [])
+    num_cols = diag.get("numeric_columns", [])
+    year_cols = diag.get("year_columns", [])
+    rec_year = diag.get("recommended_reference_period")
+    label_col = (str_cols[0] if str_cols else df.columns[0]) if len(df.columns) > 0 else "항목"
+    rec_year_str = str(rec_year) if rec_year else (year_cols[-1] if year_cols else None)
+
+    suggested_queries = []
+    if rec_year_str:
+        suggested_queries.append({
+            "chip": f"📊 {rec_year_str}년 상위 10개 {label_col} 순위 비교",
+            "query": f"{rec_year_str}년 기준 가장 높은 상위 10개 {label_col}의 순위와 수치를 비교해줘."
+        })
+        suggested_queries.append({
+            "chip": f"🎯 {rec_year_str}년 전체 평균·중앙값 통계",
+            "query": f"{rec_year_str}년 기준 전체 {label_col}의 평균, 중앙값 및 기술통계를 요약해줘."
+        })
+    elif num_cols:
+        target_num = num_cols[0]
+        suggested_queries.append({
+            "chip": f"📊 {target_num} 상위 10개 {label_col} 순위",
+            "query": f"{target_num} 기준으로 가장 높은 상위 10개 {label_col}의 순위와 수치를 비교해줘."
+        })
+        suggested_queries.append({
+            "chip": f"🎯 {target_num} 평균 및 중앙값 통계",
+            "query": f"{target_num}의 평균, 중앙값 및 핵심 기술통계를 요약해줘."
+        })
+
+    suggested_queries.append({
+        "chip": "🩺 결측치 및 데이터 품질 상태 점검",
+        "query": "데이터셋 전체에서 결측치(누락값)가 많은 항목과 전반적인 데이터 품질 상태를 알려줘."
+    })
+
+    if diag.get("aggregate_row_candidates"):
+        suggested_queries.append({
+            "chip": "🔍 집계 묶음 행(합계/그룹) 탐지 확인",
+            "query": "개별 데이터 외에 전체 합계나 소계 등 집계 그룹 행이 몇 개나 포함되어 있는지 확인해줘."
+        })
+    elif year_cols and len(year_cols) >= 3:
+        suggested_queries.append({
+            "chip": f"📈 {year_cols[0]}~{year_cols[-1]} 시계열 추이 분석",
+            "query": f"{year_cols[0]}년부터 {year_cols[-1]}년까지 주요 항목들의 시계열 변화 추이를 비교해줘."
+        })
+    elif len(num_cols) >= 2:
+        suggested_queries.append({
+            "chip": f"📈 {num_cols[0]} vs {num_cols[-1]} 비교 분석",
+            "query": f"{num_cols[0]}과(와) {num_cols[-1]} 사이의 수치 분포 및 상관관계를 분석해줘."
+        })
+    else:
+        suggested_queries.append({
+            "chip": "📊 수치 구간별 빈도 분포 (히스토그램)",
+            "query": "데이터의 전반적인 수치 구간별 빈도 분포 형태와 쏠림 현상을 분석해줘."
+        })
+
     # 진단에 포함할 13개 항목 종합 페이로드 구성
     response_payload = {
         "status": "success",
@@ -565,6 +620,8 @@ def inspect_file():
         "preview_rows": diag["preview_rows"],
         # 13. 경고 목록
         "warnings": diag["warnings"],
+        # 데이터 맞춤형 추천 자연어 질문 4개
+        "suggested_queries": suggested_queries,
         "notice": "데이터는 서버 메모리에만 1개 세트로 임시 보관되며, 서버를 재시작하면 사라집니다."
     }
 
@@ -677,11 +734,13 @@ def ask_natural_language():
         return jsonify({"error": "질문 내용을 입력해주세요."}), 400
 
     df = current_dataset["df"]
+    filename = current_dataset.get("filename", "업로드 데이터")
     rec_year = current_dataset.get("recommended_reference_period") or "2024"
     year_cols = tools.detect_year_columns(df)
     min_year = min(year_cols) if year_cols else "1960"
     max_year = max(year_cols) if year_cols else "2024"
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    label_col = tools.get_first_label_column(df)
 
     catalog_summary = json.dumps([
         {"name": t["name"], "title": t["title"], "description": t["description"], "requires_reference_period": t["requires_reference_period"]}
@@ -692,34 +751,36 @@ def ask_natural_language():
 
     # 1. 자연어 질문을 12개 도구 카탈로그 및 파라미터로 매핑
     parse_prompt = f"""당신은 데이터 분석 질문 분류기입니다.
-사용자가 데이터에 대해 다음과 같이 자연어로 질문했습니다:
+사용자가 업로드한 데이터셋({filename})에 대해 다음과 같이 자연어로 질문했습니다:
 "{query}"
 
 이 질문을 가장 잘 분석하고 시각화할 수 있는 도구 1개와 적절한 파라미터를 아래 12개 도구 카탈로그 중에서 엄격히 선택하여 JSON으로 응답하세요:
 {catalog_summary}
 
 [데이터셋 정보]
-- 권장 기준연도: {rec_year}
-- 연도 범위: {min_year} ~ {max_year}
-- 라벨 열: Country Name
+- 파일명: {filename}
+- 라벨 열: {label_col}
+- 전체 열 목록 샘플: {[str(c) for c in df.columns[:20]]}
+- 권장 기준시점: {rec_year}
+- 시점 범위: {min_year} ~ {max_year}
 
 [작성 규칙]
 1. 도구(tool)는 반드시 카탈로그의 12개 영문 도구명 중 하나여야 합니다:
-   - 상위/하위 순위, 순위권 국가, 특정 국가와 순위 비교 -> "top_bottom_n"
-   - 대한민국(한국) vs 전 세계 평균/중앙값 1:1 벤치마킹 비교 -> "compare_one_vs_all"
-   - 연도별 시계열 변화, 장기 추이, 특정 국가들의 연도별 흐름 -> "trend_line"
+   - 상위/하위 순위, 순위권 항목, 특정 대상과 순위 비교 -> "top_bottom_n"
+   - 특정 1개 대상(예: 대한민국 또는 특정 항목) vs 전체 집단 평균/중앙값 1:1 비교 -> "compare_one_vs_all"
+   - 연도별/시점별 시계열 변화, 장기 추이, 특정 항목들의 흐름 -> "trend_line"
    - 전체 수치 기술통계 요약(평균, 중앙값, 최솟값, 최댓값, 표준편차) -> "describe_numeric"
-   - 대륙별, 지역별, 소득군별 평균 비교 -> "group_summary"
-   - 두 시점 사이 성장량(%p), 증가율(%), 가장 많이 성장한 나라 -> "change_rate"
-   - 데이터 구간별 빈도 분포, 히스토그램, 데이터 쏠림 현상 -> "distribution"
+   - 그룹별/분류별 평균 비교 -> "group_summary"
+   - 두 시점 사이 성장량/증가율, 가장 많이 성장한 항목 -> "change_rate"
+   - 데이터 구간별 빈도 분포, 히스토그램 -> "distribution"
    - 두 숫자 열 간 상관관계, 산점도 -> "correlation_scatter"
    - 결측치 순위, 데이터 누락, 데이터 품질 진단 리포트 -> "quality_report"
-   - 연도별 데이터 수집 충실도, 추천 기준시점 -> "year_coverage"
-   - 대륙·경제권 등 묶음 행(World, OECD 등) 집계 그룹 탐지 -> "detect_aggregates"
-   - 연도 열을 행으로 변환 (언피벗, 롱 포맷 변환) -> "reshape_wide_to_long"
-2. 기준 시점(reference_period)이 필요한 도구의 경우 질문에 특정 연도가 명시되어 있으면 그 연도를 사용하고, 없으면 권장 기준연도인 "{rec_year}"를 사용하세요.
+   - 시점별 데이터 수집 충실도, 추천 기준시점 -> "year_coverage"
+   - 전체 합계/소계 등 집계 그룹 행 탐지 -> "detect_aggregates"
+   - 가로 열을 행으로 변환 (롱 포맷 언피벗) -> "reshape_wide_to_long"
+2. 기준 시점(reference_period)이 필요한 도구의 경우 질문에 특정 연도/시점이 명시되어 있으면 그 값을 사용하고, 없으면 권장 기준연도인 "{rec_year}"를 사용하세요.
 3. n 파라미터가 필요한 경우(top_bottom_n, change_rate 등) 사용자가 언급한 개수(예: 1~10등이면 n=10)를 반영하고, 없으면 기본값 10을 사용하세요.
-4. change_rate(성장률/변화량)의 경우 최근 기준 시점(reference_period)과 과거 비교 시점(compare_period)을 함께 추출하세요. (예: 2010년 대비 2024년이면 reference_period="2024", compare_period="2010")
+4. change_rate(성장률/변화량)의 경우 최근 기준 시점(reference_period)과 과거 비교 시점(compare_period)을 함께 추출하세요.
 5. 오직 아래 JSON 형식만 반환하세요:
 {{
   "tool": "도구명",
@@ -786,7 +847,7 @@ def ask_natural_language():
         tool_name = "top_bottom_n"
         params = {"reference_period": rec_year, "n": 10, "exclude_aggregates": True}
 
-    # 한국(대한민국) 관련 수치 부가 컨텍스트 산출
+    # 특정 항목(질문에서 언급된 대상 또는 한국 등) 관련 수치 부가 컨텍스트 산출
     extra_context = {}
     label_col = tools.get_first_label_column(df)
     target_period = str(params.get("reference_period") or rec_year)
@@ -795,16 +856,34 @@ def ask_natural_language():
         valid_rank_df = filtered_clean.dropna(subset=[target_period]).copy()
         valid_rank_df["_val"] = pd.to_numeric(valid_rank_df[target_period], errors="coerce")
         valid_rank_df = valid_rank_df.dropna(subset=["_val"]).sort_values(by="_val", ascending=False)
-        korea_match = valid_rank_df[valid_rank_df[label_col].astype(str).str.contains("Korea", case=False, na=False)]
-        if len(korea_match) > 0:
-            k_val = round(float(korea_match.iloc[0]["_val"]), 4)
-            k_rank = int((valid_rank_df["_val"] > k_val).sum() + 1)
-            extra_context["korea"] = {
-                "name": str(korea_match.iloc[0][label_col]),
-                "value": k_val,
-                "rank": k_rank,
-                "total_countries": len(valid_rank_df)
-            }
+        
+        # 1. 질문에서 언급된 항목 탐색
+        for val in valid_rank_df[label_col].dropna().unique()[:200]:
+            val_str = str(val).strip()
+            if len(val_str) >= 2 and (val_str.lower() in query.lower() or (val_str == "Korea, Rep." and ("한국" in query or "대한민국" in query))):
+                m_row = valid_rank_df[valid_rank_df[label_col] == val]
+                if len(m_row) > 0:
+                    val_num = round(float(m_row.iloc[0]["_val"]), 4)
+                    val_rank = int((valid_rank_df["_val"] > val_num).sum() + 1)
+                    extra_context[val_str] = {
+                        "name": val_str,
+                        "value": val_num,
+                        "rank": val_rank,
+                        "total_items": len(valid_rank_df)
+                    }
+
+        # 2. 국가 데이터셋일 경우 Korea 기본 탐색
+        if "Korea, Rep." not in extra_context and ("한국" in query or "대한민국" in query or "korea" in query.lower()):
+            korea_match = valid_rank_df[valid_rank_df[label_col].astype(str).str.contains("Korea", case=False, na=False)]
+            if len(korea_match) > 0:
+                k_val = round(float(korea_match.iloc[0]["_val"]), 4)
+                k_rank = int((valid_rank_df["_val"] > k_val).sum() + 1)
+                extra_context["korea"] = {
+                    "name": str(korea_match.iloc[0][label_col]),
+                    "value": k_val,
+                    "rank": k_rank,
+                    "total_items": len(valid_rank_df)
+                }
 
     # 3. 계산된 실제 숫자를 바탕으로 자연어 답변 생성
     answer_prompt = f"""당신은 정확하고 신뢰할 수 있는 데이터 분석 교육 전문 AI입니다.
@@ -812,17 +891,20 @@ def ask_natural_language():
 "{query}"
 
 이 질문에 대해 Python Pandas가 실제 데이터셋에서 계산한 결과는 다음과 같습니다:
+- 파일명: {filename}
+- 기준 라벨 열: {label_col}
 - 선택된 분석 도구: {tool_name}
 - 기준 시점: {target_period}
-- 계산 수치 결과: {json.dumps(run_res.get('data', {}), ensure_ascii=False, default=str)[:1500]}
-- 대한민국 관련 계산 정보: {json.dumps(extra_context, ensure_ascii=False, default=str)}
+- 계산 수치 결과 요약:
+{json.dumps(run_res.get('data', {}), ensure_ascii=False, default=str)[:1500]}
+{f"- 특정 비교 항목 수치 정보: {json.dumps(extra_context, ensure_ascii=False, default=str)}" if extra_context else ""}
 
 [작성 가이드라인]
 1. 사용자의 질문에 대해, 위에서 계산된 실제 사실과 수치만을 근거로 명확하고 친절하게 답변하세요.
-2. 만약 질문에 대한민국이나 특정 국가와의 비교가 포함되어 있다면, 위의 대한민국 실제 수치(순위, 보급률 %)를 구체적으로 인용하여 비교 설명하세요.
+2. 업로드된 파일({filename})의 실제 데이터 항목과 지표명, 단위를 정확히 반영하세요. (데이터셋과 관련 없는 인터넷 보급률 등의 다른 내용을 지어내지 마세요.)
 3. 데이터에 없는 임의의 숫자를 절대로 지어내지 마세요.
 4. 마크다운 형식(소제목, 볼드체, 글머리 기호)을 활용하여 2~3개의 읽기 쉬운 문단으로 구성하세요.
-5. 답변 마지막에는 아래에 제공될 차트 시각화 버튼을 클릭하여 시각화와 추가 심층 보고서를 확인할 수 있음을 친절하게 안내하세요.
+5. 답변 마지막에는 아래에 제공될 차트 시각화 버튼을 클릭하여 시각화와 추가 심층 보고서를 확인할 수 있음을 안내하세요.
 """
 
     try:
@@ -987,22 +1069,22 @@ def suggest_analyses():
             {
                 "tool": "quality_report",
                 "recommended_reference_period": None,
-                "reason": "대규모 국가별 시계열 데이터셋이므로 결측치와 중복 현황을 먼저 점검하는 것을 권장합니다."
-            },
-            {
-                "tool": "detect_aggregates",
-                "recommended_reference_period": None,
-                "reason": "데이터셋 내 대륙 및 경제권 집계 그룹 후보를 사전에 식별하여 통계 왜곡을 방지합니다."
+                "reason": "데이터셋 전체 열의 결측치와 품질 현황을 먼저 점검하는 것을 권장합니다."
             },
             {
                 "tool": "top_bottom_n",
                 "recommended_reference_period": rec_period,
-                "reason": f"권장 기준연도인 {rec_period}년을 기준으로 글로벌 상하위 순위 분포를 명확히 파악합니다."
+                "reason": f"권장 기준시점({rec_period})을 기준으로 주요 상하위 항목의 순위 및 수치 격차를 파악합니다."
             },
             {
-                "tool": "compare_one_vs_all",
+                "tool": "describe_numeric",
                 "recommended_reference_period": rec_period,
-                "reason": f"대한민국의 {rec_period}년 수치를 글로벌 평균 및 중앙값과 직관적으로 비교 벤치마킹합니다."
+                "reason": f"권장 기준시점({rec_period})의 평균, 중앙값, 사분위수 등 기술통계 분포를 확인합니다."
+            },
+            {
+                "tool": "detect_aggregates",
+                "recommended_reference_period": None,
+                "reason": "데이터셋 내 소계, 합계 등 집계 그룹 행이 포함되어 있는지 사전에 식별합니다."
             }
         ]
         return jsonify({
@@ -1045,27 +1127,28 @@ def suggest_analyses():
 
     # 최소 3개 미만인 경우 기본 필수 분석 보충
     if len(valid_suggestions) < 3:
+        target_period_str = str(rec_year) if rec_year else "기준 시점"
         defaults = [
             {
                 "tool": "top_bottom_n",
                 "params": {"reference_period": rec_year, "n": 10, "exclude_aggregates": True},
                 "reference_period": rec_year,
-                "why": f"{rec_year}년 기준 인터넷 보급률 최상위 및 최하위 국가들의 서열과 격차를 공정하게 비교합니다.",
+                "why": f"{target_period_str} 기준 최상위 및 최하위 항목들의 순위와 격차를 비교합니다.",
                 "caution": "동일 시점의 수치만 사용하여 시점 차이에 따른 왜곡을 방지했습니다."
             },
             {
-                "tool": "compare_one_vs_all",
+                "tool": "describe_numeric",
                 "params": {"reference_period": rec_year, "exclude_aggregates": True},
                 "reference_period": rec_year,
-                "why": f"대한민국의 보급률 위치를 전 세계 평균 및 중앙값과 1:1로 벤치마킹합니다.",
-                "caution": "평균값 외에 중앙값과의 격차를 함께 살펴 상대적 위상을 정확히 파악해야 합니다."
+                "why": f"{target_period_str}의 평균, 중앙값, 최솟값, 최댓값 등 주요 기술통계를 요약합니다.",
+                "caution": "이상치나 집계 행 포함 여부에 따라 평균이 영향을 받을 수 있습니다."
             },
             {
-                "tool": "trend_line",
-                "params": {"label_column": "Country Name"},
-                "reference_period": f"1960 - {rec_year}",
-                "why": "대한민국 및 주요국들의 장기 시계열 변화 궤적을 비교합니다.",
-                "caution": "과거 특정 연도의 조사 방식 변화 여부를 고려해야 합니다."
+                "tool": "quality_report",
+                "params": {},
+                "reference_period": "전체",
+                "why": "데이터셋 전체 열의 결측치 및 데이터 품질 상태를 종합 점검합니다.",
+                "caution": "결측률이 높은 열은 분석 해석 시 주의가 필요합니다."
             }
         ]
         existing_tools = {s["tool"] for s in valid_suggestions}
@@ -1203,25 +1286,40 @@ def explain_analysis():
     user_query = data.get("user_query") or (run_result.get("user_query") if isinstance(run_result, dict) else None) or current_dataset.get("last_query")
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-    # 메타데이터 출처 및 정의 로드 시도
+    # 데이터셋에 맞는 지표명 및 출처 동적 구성
+    filename = current_dataset.get("filename") or (run_result.get("filename") if isinstance(run_result, dict) else "업로드 데이터")
+    clean_name = os.path.splitext(os.path.basename(filename))[0].replace("_", " ")
+
+    # 기본값: 업로드 파일명 및 실제 컬럼 기반 동적 구성
     indicator_info = {
-        "name": "Individuals using the Internet (% of population)",
-        "definition": "지난 3개월 동안 어느 기기(스마트폰, 컴퓨터 등)로든 인터넷을 사용한 사람의 비율",
-        "source": "세계은행(World Bank) / 국제전기통신연합(ITU) 세계 전기통신/ICT 지표 데이터베이스 (https://datahub.itu.int/)"
+        "name": clean_name,
+        "definition": f"업로드된 데이터셋({filename})에 수록된 측정 항목 및 통계 수치",
+        "source": f"업로드 데이터 파일 ({filename})"
     }
-    try:
-        import glob
-        meta_ind_files = glob.glob(os.path.join("data", "**", "Metadata_Indicator*.csv"), recursive=True)
-        if meta_ind_files:
-            m_df = pd.read_csv(meta_ind_files[0], encoding="utf-8-sig")
-            if "INDICATOR_NAME" in m_df.columns:
-                indicator_info["name"] = str(m_df["INDICATOR_NAME"].iloc[0])
-            if "SOURCE_NOTE" in m_df.columns:
-                indicator_info["definition"] = str(m_df["SOURCE_NOTE"].iloc[0])
-            if "SOURCE_ORGANIZATION" in m_df.columns:
-                indicator_info["source"] = str(m_df["SOURCE_ORGANIZATION"].iloc[0])
-    except Exception:
-        pass
+
+    # 파일명이 World Bank 지표이거나 디렉터리에 메타데이터 파일이 실제로 일치할 때만 보강
+    if "API_IT.NET.USER" in filename or "Internet" in filename:
+        indicator_info = {
+            "name": "Individuals using the Internet (% of population)",
+            "definition": "지난 3개월 동안 어느 기기(스마트폰, 컴퓨터 등)로든 인터넷을 사용한 사람의 비율",
+            "source": "세계은행(World Bank) / 국제전기통신연합(ITU) 세계 전기통신/ICT 지표 데이터베이스 (https://datahub.itu.int/)"
+        }
+    else:
+        try:
+            import glob
+            meta_ind_files = glob.glob(os.path.join("data", "**", "Metadata_Indicator*.csv"), recursive=True)
+            for mf in meta_ind_files:
+                if any(part.lower() in mf.lower() for part in filename.split("_") if len(part) > 4):
+                    m_df = pd.read_csv(mf, encoding="utf-8-sig")
+                    if "INDICATOR_NAME" in m_df.columns:
+                        indicator_info["name"] = str(m_df["INDICATOR_NAME"].iloc[0])
+                    if "SOURCE_NOTE" in m_df.columns:
+                        indicator_info["definition"] = str(m_df["SOURCE_NOTE"].iloc[0])
+                    if "SOURCE_ORGANIZATION" in m_df.columns:
+                        indicator_info["source"] = str(m_df["SOURCE_ORGANIZATION"].iloc[0])
+                    break
+        except Exception:
+            pass
 
     logger.info(f"[REQUEST] POST /explain (mode={mode}, user_query={user_query})")
 
@@ -1280,7 +1378,7 @@ def explain_analysis():
 [질문 맞춤형 작성 필수 가이드라인]
 1. 보고서 전체의 초점은 사용자의 위 질문("{user_query}")에 대한 직접적이고 명쾌한 해답을 제시하는 것입니다.
 2. '## 무엇을 봤는가' 섹션의 첫머리에서 사용자가 질문한 내용("{user_query}")을 명확히 언급하며, 이에 답하기 위해 어떤 지표와 분석 도구를 적용했는지 설명하세요.
-3. '## 계산 결과' 및 '## 읽어낼 수 있는 것' 섹션에서는 단순히 수치를 나열하지 말고, 사용자의 질문에 대한 구체적인 결론과 통계적 사실(예: 질문에서 언급된 국가들의 순위, 한국과의 차이 등)을 가장 먼저 집중적으로 서술하세요.
+3. '## 계산 결과' 및 '## 읽어낼 수 있는 것' 섹션에서는 단순히 수치를 나열하지 말고, 사용자의 질문에 대한 구체적인 결론과 통계적 사실(예: 질문에서 언급된 대상 항목들의 순위 및 비교 격차 등)을 가장 먼저 집중적으로 서술하세요.
 """
 
         prompt = f"""당신은 교육용 데이터 분석 웹앱의 수석 데이터 분석가입니다.
@@ -1300,7 +1398,7 @@ def explain_analysis():
 - **문단 간 넉넉한 띄어쓰기**: 문단과 문단 사이, 소항목 사이에는 반드시 **빈 줄(두 번 엔터)**을 넣어 글이 빽빽하게 뭉치지 않게 하세요.
 - **짧고 편안한 호흡**: 긴 장문 대신 2~3문장 단위로 문단을 분리하여 호흡을 편안하게 만드세요.
 - **글머리 기호(- ) 적극 활용**: 계산 결과 수치나 나열할 항목은 줄글로 붙여 쓰지 말고 글머리 기호(- ) 목록으로 보기 쉽게 정리하세요.
-- **핵심 수치 굵게 강조**: 주요 국가명, 순위, 수치(예: **1위 United Arab Emirates (100.0%)**, **대한민국 13위 (97.90%)**)는 **굵은 글씨**로 강조하세요.
+- **핵심 수치 굵게 강조**: 주요 항목명, 순위, 핵심 수치(예: **1위 [항목명] (수치)**, **전체 평균 수치**)는 **굵은 글씨**로 강조하세요.
 - **쉬운 설명 덧붙이기**: 어려운 통계 용어는 중학생 눈높이에 맞추어 쉬운 비유와 친절한 설명을 덧붙이세요.
 
 [지표 메타데이터 및 출처]

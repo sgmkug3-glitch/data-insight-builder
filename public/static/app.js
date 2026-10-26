@@ -135,7 +135,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 } else {
                     const data = await res.json().catch(() => ({}));
                     if (lockErrorMsg) {
-                        lockErrorMsg.textContent = data.error || "비밀번호가 올바르지 않습니다. (기본값: 0412)";
+                        lockErrorMsg.textContent = data.error || "비밀번호가 올바르지 않습니다.";
                         lockErrorMsg.classList.remove("hidden");
                     }
                     if (lockPinInput) {
@@ -412,6 +412,20 @@ document.addEventListener("DOMContentLoaded", () => {
             sectionInspect.classList.remove("hidden");
             if (sectionAsk) {
                 sectionAsk.classList.remove("hidden");
+            }
+
+            // 업로드된 데이터 특성에 맞춘 자연어 추천 질문 칩 동적 렌더링
+            if (data.suggested_queries && data.suggested_queries.length > 0 && askSampleChips) {
+                askSampleChips.innerHTML = "";
+                data.suggested_queries.forEach((sq, idx) => {
+                    const btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.className = idx === 0 ? "chat-chip chip-highlight" : "chat-chip";
+                    btn.dataset.ask = sq.query;
+                    btn.textContent = sq.chip;
+                    askSampleChips.appendChild(btn);
+                });
+                console.log(`[ASK] 업로드 데이터 맞춤형 추천 질문 ${data.suggested_queries.length}개 동적 칩 적용 완료`);
             }
             sectionInspect.scrollIntoView({ behavior: "smooth" });
 
