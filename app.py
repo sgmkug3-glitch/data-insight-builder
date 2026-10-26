@@ -4,7 +4,9 @@ import json
 import logging
 import math
 import os
+import pickle
 import re
+import tempfile
 import time
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, session, redirect, url_for
@@ -205,11 +207,37 @@ def favicon():
 @app.route("/api/index", methods=["GET", "POST"])
 @app.route("/api/index/", methods=["GET", "POST"])
 def index():
-    """메인 페이지를 반환하거나 Vercel 서버리스 환경에서 POST 요청을 스마트 디스패치합니다."""
+    """메인 페이지를 반환하거나 Vercel 서버리스 환경에서 스마트 디스패치합니다."""
+    # 1. __vercel_path 파라미터가 있는 경우 직접 라우팅
+    vpath = (request.args.get("__vercel_path") or "").strip()
+    while vpath.startswith("//"):
+        vpath = vpath[1:]
+
+    if vpath:
+        if vpath in ["/suggest", "suggest"]:
+            return suggest_analyses()
+        if vpath in ["/inspect", "inspect"]:
+            return inspect_file()
+        if vpath in ["/run", "run"]:
+            return run_analysis()
+        if vpath in ["/explain", "explain"]:
+            return explain_analysis()
+        if vpath in ["/ask", "ask"]:
+            return ask_natural_language()
+        if vpath in ["/chat", "chat"]:
+            return chat_followup()
+        if vpath in ["/login", "login"]:
+            return login()
+        if vpath in ["/health", "health"]:
+            return health()
+
+    # 2. POST 요청 스마트 디스패치
     if request.method == "POST":
         if "file" in request.files:
             return inspect_file()
         data = request.get_json(silent=True) or {}
+        if "inspect_data" in data or request.path.endswith("suggest"):
+            return suggest_analyses()
         if "password" in data or "password" in request.form:
             return login()
         if "tool" in data:
@@ -220,7 +248,6 @@ def index():
             return chat_followup()
         if "mode" in data:
             return explain_analysis()
-        # 기타 미지정 POST 요청은 login으로 처리
         return login()
 
     logger.info("[RESPONSE] status=200 path=/")
@@ -439,6 +466,8 @@ detect_and_parse_csv = detect_and_parse_data
 
 
 @app.route("/inspect", methods=["POST"])
+@app.route("/api/inspect", methods=["POST"])
+@app.route("/api/index/inspect", methods=["POST"])
 def inspect_file():
     """CSV 및 엑셀(.xlsx, .xls) 업로드, 인코딩·헤더 감지, 13개 항목 종합 진단 결과 JSON 반환"""
     if "file" not in request.files:
@@ -489,6 +518,15 @@ def inspect_file():
     current_dataset["raw_columns"] = [str(c) for c in df.columns]
     current_dataset["recommended_reference_period"] = diag["recommended_reference_period"]
     current_dataset["aggregate_row_candidates"] = diag["aggregate_row_candidates"]
+
+    # Vercel 서버리스 람다 간 공유를 위해 /tmp에 데이터셋 캐싱
+    try:
+        tmp_path = os.path.join(tempfile.gettempdir(), "data_insight_builder_dataset.pkl")
+        with open(tmp_path, "wb") as f:
+            pickle.dump(dict(current_dataset), f)
+        logger.info("[CACHE] /tmp 캐시에 데이터셋 저장 완료")
+    except Exception as ce:
+        logger.warning(f"[CACHE] /tmp 캐시 저장 실패 (무시 가능): {ce}")
 
     # 진단에 포함할 13개 항목 종합 페이로드 구성
     response_payload = {
@@ -615,6 +653,8 @@ ALLOWED_TOOL_NAMES = {t["name"] for t in TOOL_CATALOG}
 
 
 @app.route("/ask", methods=["POST"])
+@app.route("/api/ask", methods=["POST"])
+@app.route("/api/index/ask", methods=["POST"])
 def ask_natural_language():
     """
     자연어로 질문하면 의도를 파악하여 적합한 도구를 선정,
@@ -814,41 +854,72 @@ def ask_natural_language():
 
 
 @app.route("/suggest", methods=["POST"])
+@app.route("/api/suggest", methods=["POST"])
+@app.route("/api/index/suggest", methods=["POST"])
 def suggest_analyses():
     """
     진단 결과 요약과 도구 카탈로그를 Gemini에 전달하여 실행 가능한 분석 3~5개를 JSON으로 제안받습니다.
     (규칙: Gemini에게 CSV 원본 전체 전송 금지, 카탈로그 외 도구 제안 불가, 오직 JSON만 반환)
     """
+    req_json = request.get_json(silent=True) or {}
+    client_inspect = req_json.get("inspect_data")
+
+    # 서버리스 람다 간 메모리 단절 대비: /tmp 캐시 복원 시도
     if current_dataset["df"] is None:
-        msg = "진단된 데이터셋이 없습니다. 먼저 CSV 파일을 업로드해 주세요."
+        try:
+            tmp_path = os.path.join(tempfile.gettempdir(), "data_insight_builder_dataset.pkl")
+            if os.path.exists(tmp_path):
+                with open(tmp_path, "rb") as f:
+                    saved = pickle.load(f)
+                    current_dataset.update(saved)
+                    logger.info("[CACHE] /tmp 캐시에서 데이터셋 복원 성공 (suggest_analyses)")
+        except Exception as ce:
+            logger.warning(f"[CACHE] /tmp 복원 시도 실패: {ce}")
+
+    # 서버 메모리에도 없고 클라이언트 진단 데이터도 없는 경우
+    if current_dataset["df"] is None and not client_inspect:
+        msg = "진단된 데이터셋이 없습니다. 먼저 데이터 파일을 업로드해 주세요."
         logger.warning(f"[ERROR] {msg}")
         return jsonify({"error": msg}), 400
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key or api_key == "your_gemini_api_key_here":
-        msg = "GEMINI_API_KEY가 설정되지 않았습니다. .env 파일에 유효한 API Key를 입력해 주세요."
+        msg = "GEMINI_API_KEY가 설정되지 않았습니다. Vercel 환경변수(Settings -> Environment Variables)에 GEMINI_API_KEY를 등록해 주세요."
         logger.warning(f"[ERROR] {msg}")
         return jsonify({"error": msg}), 400
 
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    df = current_dataset["df"]
 
     # Gemini에 보낼 요약 메타데이터 구성 (CSV 원본 전체는 절대 전송하지 않음)
-    rec_year = current_dataset.get("recommended_reference_period") or "2024"
-    str_cols = df.select_dtypes(include=["object", "string"]).columns.tolist()
-    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    sample_cols = [str(c) for c in df.columns[:15]]
+    if current_dataset["df"] is not None:
+        df = current_dataset["df"]
+        rec_year = current_dataset.get("recommended_reference_period") or "2024"
+        str_cols = df.select_dtypes(include=["object", "string"]).columns.tolist()
+        num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        sample_cols = [str(c) for c in df.columns[:15]]
 
-    diag_summary = {
-        "filename": current_dataset.get("filename"),
-        "total_rows": int(len(df)),
-        "total_columns": int(len(df.columns)),
-        "recommended_reference_period": str(rec_year),
-        "label_column": str(str_cols[0]) if str_cols else str(df.columns[0]),
-        "aggregate_candidates_count": len(current_dataset.get("aggregate_row_candidates", [])),
-        "sample_columns": sample_cols,
-        "numeric_columns_sample": [str(c) for c in num_cols[-10:]]
-    }
+        diag_summary = {
+            "filename": current_dataset.get("filename"),
+            "total_rows": int(len(df)),
+            "total_columns": int(len(df.columns)),
+            "recommended_reference_period": str(rec_year),
+            "label_column": str(str_cols[0]) if str_cols else str(df.columns[0]),
+            "aggregate_candidates_count": len(current_dataset.get("aggregate_row_candidates", [])),
+            "sample_columns": sample_cols,
+            "numeric_columns_sample": [str(c) for c in num_cols[-10:]]
+        }
+    else:
+        rec_year = client_inspect.get("recommended_reference_period") or "2024"
+        diag_summary = {
+            "filename": client_inspect.get("filename", "업로드 데이터"),
+            "total_rows": int(client_inspect.get("row_count", 100)),
+            "total_columns": int(client_inspect.get("col_count", 10)),
+            "recommended_reference_period": str(rec_year),
+            "label_column": (client_inspect.get("column_names") or ["국가명"])[0],
+            "aggregate_candidates_count": len(client_inspect.get("aggregate_row_candidates", [])),
+            "sample_columns": (client_inspect.get("column_names") or [])[:15],
+            "numeric_columns_sample": [str(c) for c in (client_inspect.get("numeric_columns") or [])[-10:]]
+        }
 
     prompt = f"""당신은 교육용 데이터 분석 웹앱의 수석 데이터 분석가입니다.
 사용자가 업로드한 데이터셋 진단 요약과 도구 카탈로그를 검토하고, 지금 데이터로 실행하기에 가장 유의미한 분석 3~5개를 골라 제안해주세요.
@@ -1014,13 +1085,26 @@ def suggest_analyses():
 
 
 @app.route("/run", methods=["POST"])
+@app.route("/api/run", methods=["POST"])
+@app.route("/api/index/run", methods=["POST"])
 def run_analysis():
     """
     선택된 분석 도구를 Pandas로 실제 실행하고, 계산 결과와 Chart.js 호환 데이터를 반환합니다.
     (규칙: 계산은 반드시 Pandas가 수행, 기준시점 필수 검증, 제외 행 수/이유 반환)
     """
     if current_dataset["df"] is None:
-        msg = "분석할 데이터셋이 없습니다. 먼저 CSV 파일을 업로드해 주세요."
+        try:
+            tmp_path = os.path.join(tempfile.gettempdir(), "data_insight_builder_dataset.pkl")
+            if os.path.exists(tmp_path):
+                with open(tmp_path, "rb") as f:
+                    saved = pickle.load(f)
+                    current_dataset.update(saved)
+                    logger.info("[CACHE] /tmp 캐시에서 데이터셋 복원 성공 (run_analysis)")
+        except Exception as ce:
+            logger.warning(f"[CACHE] /tmp 복원 시도 실패: {ce}")
+
+    if current_dataset["df"] is None:
+        msg = "분석할 데이터셋이 없습니다. 먼저 데이터 파일을 업로드해 주세요."
         logger.warning(f"[ERROR] {msg}")
         return jsonify({"error": msg}), 400
 
@@ -1095,6 +1179,8 @@ def run_analysis():
 
 
 @app.route("/explain", methods=["POST"])
+@app.route("/api/explain", methods=["POST"])
+@app.route("/api/index/explain", methods=["POST"])
 def explain_analysis():
     """
     Pandas 분석 결과를 Gemini에 전달하여 해석 보고서를 생성합니다. (Prompt A/B 모드 지원)
@@ -1262,6 +1348,8 @@ def explain_analysis():
 
 
 @app.route("/chat", methods=["POST"])
+@app.route("/api/chat", methods=["POST"])
+@app.route("/api/index/chat", methods=["POST"])
 def chat_followup():
     """
     분석 보고서에 대한 후속 질의응답 (Q&A 대화형 어시스턴트)

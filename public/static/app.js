@@ -602,7 +602,13 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const res = await fetch("/suggest", {
                 method: "POST",
-                headers: getAuthHeaders()
+                headers: {
+                    "Content-Type": "application/json",
+                    ...getAuthHeaders()
+                },
+                body: JSON.stringify({
+                    inspect_data: inspectData
+                })
             });
             const data = await res.json();
 
